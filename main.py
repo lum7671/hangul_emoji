@@ -1,5 +1,6 @@
 import argparse
 import re
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -27,7 +28,11 @@ def parse_args():
         description="두 줄 문구를 꽉 채운 투명 PNG 이모티콘으로 생성합니다."
     )
     parser.add_argument("--chars01", default="고맙", help="첫 번째 줄 문구")
-    parser.add_argument("--chars02", default="습니다", help="두 번째 줄 문구")
+    parser.add_argument(
+        "--chars02",
+        default="습니다",
+        help="두 번째 줄 문구 (chars01만 지정하면 단일 줄로 렌더링)",
+    )
     parser.add_argument(
         "--color",
         default="orange",
@@ -86,8 +91,24 @@ def resolve_color(color_name):
 def build_output_path(chars01, chars02):
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     c1 = sanitize_filename_component(chars01)
+    if chars02 is None:
+        return DIST_DIR / f"{c1}.png"
     c2 = sanitize_filename_component(chars02)
     return DIST_DIR / f"{c1}_{c2}.png"
+
+
+def option_was_provided(argv, option_name):
+    return any(arg == option_name or arg.startswith(f"{option_name}=") for arg in argv)
+
+
+def resolve_render_lines(args, argv):
+    chars01_was_provided = option_was_provided(argv, "--chars01")
+    chars02_was_provided = option_was_provided(argv, "--chars02")
+
+    if chars01_was_provided and not chars02_was_provided:
+        return args.chars01, None
+
+    return args.chars01, args.chars02
 
 
 def render_text_filled(image, text, box, font_path, color):
@@ -154,6 +175,10 @@ def render_text_filled(image, text, box, font_path, color):
 
 def create_emoji(chars01, chars02, size_px, color_rgba, font_path):
     image = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
+    if chars02 is None:
+        render_text_filled(image, chars01, (0, 0, size_px, size_px), font_path, color_rgba)
+        return image
+
     half = size_px // 2
     top_box = (0, 0, size_px, half)
     bottom_box = (0, half, size_px, size_px)
@@ -165,6 +190,7 @@ def create_emoji(chars01, chars02, size_px, color_rgba, font_path):
 
 def main():
     args = parse_args()
+    chars01, chars02 = resolve_render_lines(args, sys.argv[1:])
 
     if args.color_list:
         print("사용 가능한 색상:")
@@ -177,9 +203,9 @@ def main():
 
     color_rgba = resolve_color(args.color)
     font_path = resolve_font_path(args.font)
-    output_path = build_output_path(args.chars01, args.chars02)
+    output_path = build_output_path(chars01, chars02)
 
-    image = create_emoji(args.chars01, args.chars02, args.size, color_rgba, font_path)
+    image = create_emoji(chars01, chars02, args.size, color_rgba, font_path)
     image.save(output_path, "PNG", optimize=True)
     print(f"성공: {output_path} 파일이 생성되었습니다.")
 
